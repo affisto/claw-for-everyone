@@ -7,3 +7,4 @@ dist/
 *.db
 *.sqlite
 .DS_Store
+.omc/
