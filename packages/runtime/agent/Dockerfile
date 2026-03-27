@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY package.json .
 COPY index.js .
+COPY skills/ skills/
 
 EXPOSE 3000
 

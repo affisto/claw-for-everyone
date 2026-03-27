@@ -114,6 +114,8 @@ program
         `-e LLM_PROVIDER=${opts.llm} ` +
         `-e LLM_MODEL=${model || ""} ` +
         `-e LLM_API_KEY=${apiKey} ` +
+        `-e HOST_URL=http://host.docker.internal:3000 ` +
+        `-e AGENT_SKILLS=${JSON.parse(db.select().from(agents).where(eq(agents.id, id)).get()?.skills || "[]").join(",")} ` +
         `-p ${agentPort}:3000 ` +
         `--memory=512m ` +
         `claw-agent:latest`,
@@ -269,6 +271,65 @@ program
 
     db.delete(agents).where(eq(agents.id, agent.id)).run();
     console.log(`Agent "${name}" removed.`);
+  });
+
+// --- skill install ---
+program
+  .command("skill:install <skill> <agentName>")
+  .description("Install a skill to an agent")
+  .action(async (skill: string, agentName: string) => {
+    const db = initDb();
+    const agent = db.select().from(agents).where(eq(agents.name, agentName)).get();
+    if (!agent) {
+      console.error(`Agent "${agentName}" not found.`);
+      process.exit(1);
+    }
+
+    const currentSkills = JSON.parse(agent.skills || "[]") as string[];
+    if (currentSkills.includes(skill)) {
+      console.log(`Skill "${skill}" is already installed on agent "${agentName}".`);
+      return;
+    }
+
+    currentSkills.push(skill);
+    db.update(agents)
+      .set({ skills: JSON.stringify(currentSkills), updatedAt: new Date() })
+      .where(eq(agents.id, agent.id))
+      .run();
+
+    // If agent has a container, update AGENT_SKILLS env and recreate
+    if (agent.containerId) {
+      console.log(`Skill "${skill}" installed. Recreate the container to apply:`);
+      console.log(`  pnpm -w af rm ${agentName} && pnpm -w af create ${agentName} --llm ${agent.llmProvider}`);
+    } else {
+      console.log(`Skill "${skill}" installed on agent "${agentName}".`);
+    }
+  });
+
+// --- skill list ---
+program
+  .command("skill:list [agentName]")
+  .description("List available skills or skills installed on an agent")
+  .action(async (agentName?: string) => {
+    if (agentName) {
+      const db = initDb();
+      const agent = db.select().from(agents).where(eq(agents.name, agentName)).get();
+      if (!agent) {
+        console.error(`Agent "${agentName}" not found.`);
+        process.exit(1);
+      }
+      const skills = JSON.parse(agent.skills || "[]") as string[];
+      console.log(`Skills installed on "${agentName}":`);
+      if (skills.length === 0) {
+        console.log("  (none)");
+      } else {
+        for (const s of skills) console.log(`  - ${s}`);
+      }
+    } else {
+      console.log("Available built-in skills:\n");
+      console.log("  web-page    Create and update web pages served at /p/<slug>");
+      console.log("\nInstall with: pnpm -w af skill:install <skill> <agent>");
+    }
   });
 
 // --- teach ---
