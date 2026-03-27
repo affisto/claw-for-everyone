@@ -33,6 +33,16 @@ export function migrate() {
     )
   `);
   db.run(sql`
+    CREATE TABLE IF NOT EXISTS channel_configs (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL REFERENCES agents(id),
+      channel_type TEXT NOT NULL,
+      config TEXT NOT NULL DEFAULT '{}',
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL
+    )
+  `);
+  db.run(sql`
     CREATE TABLE IF NOT EXISTS shared_resources (
       key TEXT PRIMARY KEY,
       value TEXT,

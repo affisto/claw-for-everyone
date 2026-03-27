@@ -35,6 +35,17 @@ export const pages = sqliteTable("pages", {
     .$defaultFn(() => new Date()),
 });
 
+export const channelConfigs = sqliteTable("channel_configs", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id").notNull().references(() => agents.id),
+  channelType: text("channel_type").notNull(), // slack | telegram | discord
+  config: text("config").notNull().default("{}"), // JSON: { botToken, signingSecret, appToken, channel }
+  active: integer("active").notNull().default(1),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export const sharedResources = sqliteTable("shared_resources", {
   key: text("key").primaryKey(),
   value: text("value"), // JSON

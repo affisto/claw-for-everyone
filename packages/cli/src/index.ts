@@ -2,7 +2,8 @@
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
-import { createDb, migrate, agents } from "@claw/shared-db";
+import { createDb, migrate, agents, channelConfigs } from "@claw/shared-db";
+import { ChannelBridge } from "@claw/channels";
 import { eq } from "drizzle-orm";
 import { getDbPath } from "./config.js";
 
@@ -283,15 +284,103 @@ program
 // --- invite ---
 program
   .command("invite <name>")
-  .description("Invite an agent to a channel")
-  .option("--slack <channel>", "Slack channel")
-  .option("--telegram <chat>", "Telegram chat")
-  .option("--discord <channel>", "Discord channel")
-  .action(async (name: string, opts: { slack?: string; telegram?: string; discord?: string }) => {
-    const channel = opts.slack || opts.telegram || opts.discord;
-    console.log(`Inviting agent "${name}" to ${channel}...`);
-    // TODO: Connect agent to channel
-    console.log("Done!");
+  .description("Invite an agent to a Slack channel")
+  .option("--slack <channel>", "Slack channel name or ID")
+  .option("--slack-bot-token <token>", "Slack Bot Token (or SLACK_BOT_TOKEN env)")
+  .option("--slack-app-token <token>", "Slack App Token (or SLACK_APP_TOKEN env)")
+  .action(async (name: string, opts: { slack?: string; slackBotToken?: string; slackAppToken?: string }) => {
+    const db = initDb();
+    const agent = db.select().from(agents).where(eq(agents.name, name)).get();
+    if (!agent) {
+      console.error(`Agent "${name}" not found.`);
+      process.exit(1);
+    }
+
+    if (!opts.slack) {
+      console.error("Please specify a channel: --slack <channel>");
+      process.exit(1);
+    }
+
+    const botToken = opts.slackBotToken || process.env.SLACK_BOT_TOKEN || "";
+    const appToken = opts.slackAppToken || process.env.SLACK_APP_TOKEN || "";
+
+    if (!botToken || !appToken) {
+      console.error("Slack requires bot token and app token.");
+      console.error("  Set SLACK_BOT_TOKEN and SLACK_APP_TOKEN env vars,");
+      console.error("  or pass --slack-bot-token and --slack-app-token.");
+      process.exit(1);
+    }
+
+    const id = randomUUID();
+    const config = JSON.stringify({ botToken, appToken, channel: opts.slack });
+
+    db.insert(channelConfigs).values({
+      id,
+      agentId: agent.id,
+      channelType: "slack",
+      config,
+      active: 1,
+      createdAt: new Date(),
+    }).run();
+
+    console.log(`Agent "${name}" invited to Slack channel "${opts.slack}".`);
+    console.log(`  Start the bridge with: pnpm -w af bridge`);
+  });
+
+// --- bridge ---
+program
+  .command("bridge")
+  .description("Start the channel bridge (connects agents to Slack/Telegram/Discord)")
+  .action(async () => {
+    const db = initDb();
+    const bridge = new ChannelBridge();
+
+    const configs = db.select().from(channelConfigs).where(eq(channelConfigs.active, 1)).all();
+
+    if (configs.length === 0) {
+      console.log("No channel configs found. Use 'pnpm -w af invite <agent> --slack <channel>' first.");
+      return;
+    }
+
+    for (const cfg of configs) {
+      const agent = db.select().from(agents).where(eq(agents.id, cfg.agentId)).get();
+      if (!agent) continue;
+
+      const parsed = JSON.parse(cfg.config) as { botToken: string; appToken: string; channel: string };
+
+      // Find agent port from container
+      let agentPort = 4100;
+      if (agent.containerId) {
+        try {
+          const portInfo = execSync(
+            `docker port ${agent.containerId} 3000`,
+            { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+          ).trim();
+          const match = portInfo.match(/:(\d+)$/);
+          if (match) agentPort = parseInt(match[1], 10);
+        } catch {
+          console.error(`  Cannot find port for agent "${agent.name}". Is it running?`);
+          continue;
+        }
+      }
+
+      if (cfg.channelType === "slack") {
+        console.log(`Connecting agent "${agent.name}" to Slack...`);
+        await bridge.connectSlack(agent.name, agentPort, {
+          botToken: parsed.botToken,
+          appToken: parsed.appToken,
+        });
+      }
+    }
+
+    console.log("\nBridge is running. Press Ctrl+C to stop.");
+
+    // Keep process alive
+    process.on("SIGINT", async () => {
+      console.log("\nShutting down bridge...");
+      await bridge.disconnectAll();
+      process.exit(0);
+    });
   });
 
 // --- web ---
