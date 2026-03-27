@@ -486,6 +486,34 @@ program
     initDb(); // Ensure DB exists
 
     if (opts.docker) {
+      // Check if already running
+      try {
+        const status = execSync(
+          `docker compose ps web --format '{{.State}}'`,
+          { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+        ).trim();
+        if (status === "running") {
+          const portInfo = execSync(
+            `docker compose port web 3000`,
+            { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+          ).trim();
+          console.log(`Web console is already running at http://${portInfo}`);
+          console.log(`  Stop with: docker compose down`);
+          return;
+        }
+      } catch {
+        // Not running, proceed
+      }
+
+      // Check if port is in use
+      try {
+        execSync(`lsof -ti:${opts.port}`, { stdio: ["pipe", "pipe", "pipe"] });
+        console.error(`Port ${opts.port} is already in use. Choose a different port with -p <port>`);
+        process.exit(1);
+      } catch {
+        // Port is free, proceed
+      }
+
       console.log("Starting with docker-compose...");
       execSync(`AFFISTO_PORT=${opts.port} docker compose up -d web`, { stdio: "inherit" });
       console.log(`\nAdmin console: http://localhost:${opts.port}`);
