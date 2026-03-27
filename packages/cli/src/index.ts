@@ -487,7 +487,7 @@ program
 
     if (opts.docker) {
       console.log("Starting with docker-compose...");
-      execSync("docker compose up -d web", { stdio: "inherit" });
+      execSync(`AFFISTO_PORT=${opts.port} docker compose up -d web`, { stdio: "inherit" });
       console.log(`\nAdmin console: http://localhost:${opts.port}`);
       return;
     }

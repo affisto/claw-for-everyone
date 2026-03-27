@@ -4,12 +4,13 @@ services:
       context: .
       dockerfile: packages/web/Dockerfile
     ports:
-      - "3000:3000"
+      - "${AFFISTO_PORT:-3000}:3000"
     volumes:
       - affisto-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - AFFISTO_DB_PATH=/data/claw.db
+      - PORT=3000
     depends_on: []
     restart: unless-stopped
 
