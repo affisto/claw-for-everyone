@@ -2,15 +2,70 @@
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { basename, join } from "node:path";
 import { createDb, migrate, agents, channelConfigs } from "@claw/shared-db";
 import { ChannelBridge } from "@claw/channels";
 import { eq } from "drizzle-orm";
-import { getDbPath } from "./config.js";
+import { getAgentDir, getDbPath } from "./config.js";
 
 function initDb() {
   const db = createDb(getDbPath());
   migrate();
   return db;
+}
+
+const SUPPORTED_LLM_PROVIDERS = ["claude", "openai", "gemini", "ollama", "lmstudio"] as const;
+type SupportedLLMProvider = (typeof SUPPORTED_LLM_PROVIDERS)[number];
+
+const DEFAULT_MODELS: Record<SupportedLLMProvider, string> = {
+  claude: "claude-sonnet-4-20250514",
+  openai: "gpt-4.1-mini",
+  gemini: "gemini-2.0-flash",
+  ollama: "llama3.2",
+  lmstudio: "openai/gpt-oss-20b",
+};
+
+function isSupportedLLMProvider(provider: string): provider is SupportedLLMProvider {
+  return SUPPORTED_LLM_PROVIDERS.includes(provider as SupportedLLMProvider);
+}
+
+function getDefaultModel(provider: SupportedLLMProvider): string {
+  return DEFAULT_MODELS[provider];
+}
+
+function getProviderApiKey(provider: SupportedLLMProvider, explicitApiKey?: string): string {
+  if (explicitApiKey) return explicitApiKey;
+
+  switch (provider) {
+    case "claude":
+      return process.env.ANTHROPIC_API_KEY || "";
+    case "openai":
+      return process.env.OPENAI_API_KEY || "";
+    case "gemini":
+      return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+    case "ollama":
+      return "";
+    case "lmstudio":
+      return process.env.LMSTUDIO_API_KEY || "";
+  }
+}
+
+function getProviderBaseUrl(provider: SupportedLLMProvider): string {
+  switch (provider) {
+    case "openai":
+      return process.env.OPENAI_BASE_URL || "";
+    case "ollama":
+      return process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434";
+    case "lmstudio":
+      return process.env.LMSTUDIO_BASE_URL || "http://host.docker.internal:1234";
+    default:
+      return "";
+  }
+}
+
+function normalizeBaseUrl(url: string): string {
+  return url.replace(/\/$/, "");
 }
 
 const program = new Command();
@@ -65,11 +120,20 @@ program
 program
   .command("create <name>")
   .description("Create a new AI agent")
-  .option("--llm <provider>", "LLM provider (claude|openai|gemini|ollama)", "claude")
+  .option("--llm <provider>", "LLM provider (claude|openai|gemini|ollama|lmstudio)", "claude")
   .option("--model <model>", "LLM model name")
-  .option("--api-key <key>", "LLM API key (or set ANTHROPIC_API_KEY env var)")
+  .option(
+    "--api-key <key>",
+    "LLM API key (or set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / GOOGLE_API_KEY / LMSTUDIO_API_KEY)",
+  )
   .action(async (name: string, opts: { llm: string; model?: string; apiKey?: string }) => {
     const db = initDb();
+
+    if (!isSupportedLLMProvider(opts.llm)) {
+      console.error(`Unsupported LLM provider "${opts.llm}".`);
+      console.error(`  Supported: ${SUPPORTED_LLM_PROVIDERS.join(", ")}`);
+      process.exit(1);
+    }
 
     // Check if agent already exists
     const existing = db.select().from(agents).where(eq(agents.name, name)).get();
@@ -79,13 +143,15 @@ program
     }
 
     const id = randomUUID();
-    const apiKey = opts.apiKey || process.env.ANTHROPIC_API_KEY || "";
-    const model = opts.model || (opts.llm === "claude" ? "claude-sonnet-4-20250514" : undefined);
+    const provider = opts.llm;
+    const apiKey = getProviderApiKey(provider, opts.apiKey);
+    const model = opts.model || getDefaultModel(provider);
+    const baseUrl = getProviderBaseUrl(provider);
 
     db.insert(agents).values({
       id,
       name,
-      llmProvider: opts.llm,
+      llmProvider: provider,
       llmModel: model,
       llmApiKey: apiKey,
       skills: "[]",
@@ -96,7 +162,7 @@ program
 
     console.log(`Agent "${name}" created!`);
     console.log(`  ID: ${id}`);
-    console.log(`  LLM: ${opts.llm}${model ? ` (${model})` : ""}`);
+    console.log(`  LLM: ${provider}${model ? ` (${model})` : ""}`);
     console.log(`  Status: created`);
 
     // Assign a port (base 4100 + count of existing agents)
@@ -105,17 +171,22 @@ program
 
     // Try to start container
     try {
+      const agentDir = getAgentDir(id);
       const containerId = execSync(
         `docker create --name claw-agent-${id.slice(0, 8)} ` +
         `--label claw.agent.id=${id} ` +
         `--label claw.agent.name=${name} ` +
         `-e AGENT_ID=${id} ` +
         `-e AGENT_NAME=${name} ` +
-        `-e LLM_PROVIDER=${opts.llm} ` +
+        `-e LLM_PROVIDER=${provider} ` +
         `-e LLM_MODEL=${model || ""} ` +
         `-e LLM_API_KEY=${apiKey} ` +
+        `-e LLM_BASE_URL=${baseUrl} ` +
         `-e HOST_URL=http://host.docker.internal:3000 ` +
+        `-e BRAVE_SEARCH_API_KEY=${process.env.BRAVE_SEARCH_API_KEY || ""} ` +
         `-e AGENT_SKILLS=${JSON.parse(db.select().from(agents).where(eq(agents.id, id)).get()?.skills || "[]").join(",")} ` +
+        `-e AGENT_DATA_DIR=/app/data ` +
+        `-v "${agentDir}:/app/data" ` +
         `-p ${agentPort}:3000 ` +
         `--memory=512m ` +
         `claw-agent:latest`,
@@ -327,7 +398,8 @@ program
       }
     } else {
       console.log("Available built-in skills:\n");
-      console.log("  web-page    Create and update web pages served at /p/<slug>");
+      console.log("  web-page      Create and update web pages served at /p/<slug>");
+      console.log("  web-search    Search the web and fetch URLs (requires BRAVE_SEARCH_API_KEY)");
       console.log("\nInstall with: pnpm -w af skill:install <skill> <agent>");
     }
   });
@@ -337,9 +409,30 @@ program
   .command("teach <name> <file>")
   .description("Teach an agent with knowledge file")
   .action(async (name: string, file: string) => {
-    console.log(`Teaching agent "${name}" from ${file}...`);
-    // TODO: Upload knowledge to agent container
-    console.log("Done!");
+    const db = initDb();
+    const agent = db.select().from(agents).where(eq(agents.name, name)).get();
+    if (!agent) {
+      console.error(`Agent "${name}" not found.`);
+      process.exit(1);
+    }
+
+    if (!existsSync(file) || !statSync(file).isFile()) {
+      console.error(`Knowledge file "${file}" not found.`);
+      process.exit(1);
+    }
+
+    const knowledgeDir = join(getAgentDir(agent.id), "knowledge");
+    mkdirSync(knowledgeDir, { recursive: true });
+
+    const targetPath = join(knowledgeDir, basename(file));
+    copyFileSync(file, targetPath);
+
+    console.log(`Knowledge copied for agent "${name}".`);
+    console.log(`  Stored at: ${targetPath}`);
+    if (agent.containerId) {
+      console.log("  Available immediately to newly created containers and mounted runtimes.");
+      console.log("  Recreate the container if this agent was created before knowledge mounts were added.");
+    }
   });
 
 // --- invite ---
@@ -351,9 +444,12 @@ program
   .option("--slack-app-token <token>", "Slack App Token (or SLACK_APP_TOKEN env)")
   .option("--telegram", "Connect to Telegram")
   .option("--telegram-bot-token <token>", "Telegram Bot Token (or TELEGRAM_BOT_TOKEN env)")
+  .option("--telegram-mode <mode>", "Telegram mode (polling|webhook)", "polling")
+  .option("--telegram-webhook-base-url <url>", "Public HTTPS base URL for Telegram webhooks")
   .action(async (name: string, opts: {
     slack?: string; slackBotToken?: string; slackAppToken?: string;
     telegram?: boolean; telegramBotToken?: string;
+    telegramMode?: string; telegramWebhookBaseUrl?: string;
   }) => {
     const db = initDb();
     const agent = db.select().from(agents).where(eq(agents.name, name)).get();
@@ -364,24 +460,48 @@ program
 
     if (opts.telegram) {
       const botToken = opts.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || "";
+      const mode = opts.telegramMode === "webhook" ? "webhook" : "polling";
       if (!botToken) {
         console.error("Telegram requires a bot token.");
         console.error("  Set TELEGRAM_BOT_TOKEN env var, or pass --telegram-bot-token.");
         process.exit(1);
       }
 
+      if (opts.telegramMode && !["polling", "webhook"].includes(opts.telegramMode)) {
+        console.error(`Unsupported Telegram mode "${opts.telegramMode}". Use polling or webhook.`);
+        process.exit(1);
+      }
+
+      if (mode === "webhook" && !opts.telegramWebhookBaseUrl) {
+        console.error("Telegram webhook mode requires --telegram-webhook-base-url.");
+        process.exit(1);
+      }
+
       const id = randomUUID();
+      const webhookPath = `/telegram/${id}`;
+      const webhookSecretToken = randomUUID();
       db.insert(channelConfigs).values({
         id,
         agentId: agent.id,
         channelType: "telegram",
-        config: JSON.stringify({ botToken }),
+        config: JSON.stringify({
+          botToken,
+          mode,
+          webhookPath,
+          webhookSecretToken,
+          webhookBaseUrl: opts.telegramWebhookBaseUrl
+            ? normalizeBaseUrl(opts.telegramWebhookBaseUrl)
+            : "",
+        }),
         active: 1,
         createdAt: new Date(),
       }).run();
 
-      console.log(`Agent "${name}" connected to Telegram.`);
-      console.log(`  Start the bridge with: pnpm -w af bridge`);
+      console.log(`Agent "${name}" connected to Telegram (${mode}).`);
+      if (mode === "webhook") {
+        console.log(`  Public webhook URL: ${normalizeBaseUrl(opts.telegramWebhookBaseUrl || "")}${webhookPath}`);
+      }
+      console.log("  Start the bridge with: pnpm -w af bridge");
       return;
     }
 
@@ -419,7 +539,8 @@ program
 program
   .command("bridge")
   .description("Start the channel bridge (connects agents to Slack/Telegram/Discord)")
-  .action(async () => {
+  .option("--telegram-webhook-port <port>", "Local port for Telegram webhook server", "8787")
+  .action(async (opts: { telegramWebhookPort: string }) => {
     const db = initDb();
     const bridge = new ChannelBridge();
 
@@ -460,11 +581,21 @@ program
         });
       } else if (cfg.channelType === "telegram") {
         console.log(`Connecting agent "${agent.name}" to Telegram...`);
+        const webhookPath = parsed.webhookPath || `/telegram/${cfg.id}`;
+        const webhookUrl = parsed.mode === "webhook" && parsed.webhookBaseUrl
+          ? `${normalizeBaseUrl(parsed.webhookBaseUrl)}${webhookPath}`
+          : undefined;
         await bridge.connectTelegram(agent.name, agentPort, {
           botToken: parsed.botToken,
+          mode: parsed.mode === "webhook" ? "webhook" : "polling",
+          webhookPath,
+          webhookUrl,
+          webhookSecretToken: parsed.webhookSecretToken,
         });
       }
     }
+
+    await bridge.startTelegramWebhookServer(Number.parseInt(opts.telegramWebhookPort, 10));
 
     console.log("\nBridge is running. Press Ctrl+C to stop.");
 

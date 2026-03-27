@@ -9,7 +9,7 @@ export type MessageHandler = (message: ChannelMessage) => Promise<string | null>
 
 export interface Channel {
   name: string;
-  connect(config: Record<string, string>): Promise<void>;
+  connect(config: Record<string, string | undefined>): Promise<void>;
   disconnect(): Promise<void>;
   onMessage(handler: MessageHandler): void;
   sendMessage(channel: string, text: string): Promise<void>;

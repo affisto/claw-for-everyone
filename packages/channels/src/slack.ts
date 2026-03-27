@@ -6,7 +6,7 @@ export class SlackChannel implements Channel {
   private app: App | null = null;
   private handler: MessageHandler | null = null;
 
-  async connect(config: Record<string, string>): Promise<void> {
+  async connect(config: Record<string, string | undefined>): Promise<void> {
     const { botToken, appToken, signingSecret } = config;
 
     if (!botToken || !appToken) {

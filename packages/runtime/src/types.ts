@@ -1,4 +1,4 @@
-export type LLMProviderType = "claude" | "openai" | "gemini" | "ollama";
+export type LLMProviderType = "claude" | "openai" | "gemini" | "ollama" | "lmstudio";
 
 export interface LLMProvider {
   type: LLMProviderType;

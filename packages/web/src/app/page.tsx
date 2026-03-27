@@ -12,6 +12,14 @@ interface Agent {
   createdAt: number;
 }
 
+const PROVIDER_OPTIONS = [
+  { value: "claude", label: "Claude", hint: "Best for cloud AI with the strongest built-in tool use." },
+  { value: "openai", label: "OpenAI", hint: "Use OpenAI-hosted models with your API key." },
+  { value: "gemini", label: "Gemini", hint: "Use Google Gemini models with your API key." },
+  { value: "ollama", label: "Ollama", hint: "Run local models if Ollama is running on your computer." },
+  { value: "lmstudio", label: "LM Studio", hint: "Good for non-developers using a local model through LM Studio." },
+] as const;
+
 export default function Dashboard() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [newName, setNewName] = useState("");
@@ -44,11 +52,15 @@ export default function Dashboard() {
   };
 
   const agentAction = async (id: string, action: "start" | "stop") => {
-    await fetch(`/api/agents/${id}`, {
+    const res = await fetch(`/api/agents/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
     });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(`Failed to ${action}: ${data.error || "Unknown error"}`);
+    }
     await fetchAgents();
   };
 
@@ -65,6 +77,8 @@ export default function Dashboard() {
     return "#6b7280";
   };
 
+  const selectedProvider = PROVIDER_OPTIONS.find((option) => option.value === newLlm);
+
   return (
     <main style={{ maxWidth: 900, margin: "0 auto", padding: "2rem", fontFamily: "system-ui" }}>
       <h1 style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>
@@ -76,7 +90,7 @@ export default function Dashboard() {
 
       {/* Create Agent */}
       <div style={{
-        display: "flex", gap: "0.5rem", marginBottom: "2rem",
+        display: "flex", gap: "0.5rem", marginBottom: "0.75rem",
         padding: "1rem", background: "#f9fafb", borderRadius: "8px", border: "1px solid #e5e7eb",
       }}>
         <input
@@ -98,10 +112,11 @@ export default function Dashboard() {
             border: "1px solid #d1d5db", fontSize: "0.875rem",
           }}
         >
-          <option value="claude">Claude</option>
-          <option value="openai">OpenAI</option>
-          <option value="gemini">Gemini</option>
-          <option value="ollama">Ollama</option>
+          {PROVIDER_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
         <button
           onClick={createAgent}
@@ -115,6 +130,10 @@ export default function Dashboard() {
           Create Agent
         </button>
       </div>
+
+      <p style={{ color: "#6b7280", marginBottom: "2rem", fontSize: "0.875rem" }}>
+        {selectedProvider?.hint}
+      </p>
 
       {/* Agent List */}
       {agents.length === 0 ? (
@@ -135,7 +154,9 @@ export default function Dashboard() {
           <tbody>
             {agents.map((a) => (
               <tr key={a.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                <td style={{ padding: "0.75rem 0.5rem", fontWeight: 500 }}>{a.name}</td>
+                <td style={{ padding: "0.75rem 0.5rem", fontWeight: 500 }}>
+                  <a href={`/agents/${a.id}`} style={{ color: "#2563eb", textDecoration: "none" }}>{a.name}</a>
+                </td>
                 <td style={{ padding: "0.75rem 0.5rem", color: "#6b7280" }}>{a.llmProvider}</td>
                 <td style={{ padding: "0.75rem 0.5rem" }}>
                   <span style={{

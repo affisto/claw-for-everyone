@@ -33,7 +33,7 @@ packages/
 ## Features
 
 - Container-isolated AI agents (Docker)
-- Multi-LLM support (Claude, OpenAI, Gemini, Ollama)
+- Multi-LLM support (Claude, OpenAI, Gemini, Ollama, LM Studio)
 - Multi-channel messaging (Slack, Telegram, Discord)
 - Skill system with registry
 - Shared resource DB + web renderer
