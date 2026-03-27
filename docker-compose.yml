@@ -1,0 +1,28 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - affisto-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - AFFISTO_DB_PATH=/data/claw.db
+    depends_on: []
+    restart: unless-stopped
+
+  # Agent containers are created dynamically via the CLI or Web API.
+  # They connect to the same Docker network and share the data volume.
+  #
+  # Example:
+  #   docker create --name claw-agent-xxx \
+  #     --network claw-for-everyone_default \
+  #     -v affisto-data:/data \
+  #     -e AGENT_ID=xxx \
+  #     claw-agent:latest
+
+volumes:
+  affisto-data:
+    driver: local

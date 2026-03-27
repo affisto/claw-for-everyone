@@ -4,10 +4,13 @@ import { createDb, getDb as getDbInstance, migrate } from "@claw/shared-db";
 
 let initialized = false;
 
+function getDbPath() {
+  return process.env.AFFISTO_DB_PATH || join(homedir(), ".affisto", "claw.db");
+}
+
 export function initDb() {
   if (!initialized) {
-    const dbPath = join(homedir(), ".affisto", "claw.db");
-    createDb(dbPath);
+    createDb(getDbPath());
     migrate();
     initialized = true;
   }

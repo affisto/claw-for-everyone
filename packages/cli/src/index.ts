@@ -388,9 +388,31 @@ program
   .command("web")
   .description("Start the admin web console")
   .option("-p, --port <port>", "Port number", "3000")
-  .action(async (opts: { port: string }) => {
+  .option("--docker", "Start via docker-compose")
+  .action(async (opts: { port: string; docker?: boolean }) => {
+    initDb(); // Ensure DB exists
+
+    if (opts.docker) {
+      console.log("Starting with docker-compose...");
+      execSync("docker compose up -d web", { stdio: "inherit" });
+      console.log(`\nAdmin console: http://localhost:${opts.port}`);
+      return;
+    }
+
     console.log(`Starting admin console on http://localhost:${opts.port}...`);
-    // TODO: Start Next.js dev server
+    const { spawn } = await import("node:child_process");
+    const child = spawn("npx", ["next", "dev", "-p", opts.port], {
+      cwd: new URL("../../web", import.meta.url).pathname,
+      stdio: "inherit",
+      env: { ...process.env, AFFISTO_DB_PATH: getDbPath() },
+    });
+
+    process.on("SIGINT", () => {
+      child.kill("SIGINT");
+      process.exit(0);
+    });
+
+    child.on("exit", (code) => process.exit(code ?? 0));
   });
 
 program.parse();
