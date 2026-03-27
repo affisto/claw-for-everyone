@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 
 interface Agent {
   id: string;
@@ -155,7 +156,7 @@ export default function Dashboard() {
             {agents.map((a) => (
               <tr key={a.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
                 <td style={{ padding: "0.75rem 0.5rem", fontWeight: 500 }}>
-                  <a href={`/agents/${a.id}`} style={{ color: "#2563eb", textDecoration: "none" }}>{a.name}</a>
+                  <Link href={`/agents/${a.id}`} style={{ color: "#2563eb", textDecoration: "none" }}>{a.name}</Link>
                 </td>
                 <td style={{ padding: "0.75rem 0.5rem", color: "#6b7280" }}>{a.llmProvider}</td>
                 <td style={{ padding: "0.75rem 0.5rem" }}>
