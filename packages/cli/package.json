@@ -16,7 +16,8 @@
     "@claw/runtime": "workspace:*",
     "@claw/shared-db": "workspace:*",
     "@claw/skills": "workspace:*",
-    "commander": "^13.0.0"
+    "commander": "^13.0.0",
+    "drizzle-orm": "^0.38.4"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

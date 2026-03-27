@@ -12,7 +12,10 @@
     "build": "turbo build",
     "dev": "turbo dev",
     "lint": "turbo lint",
-    "clean": "turbo clean"
+    "clean": "turbo clean",
+    "af": "node packages/cli/dist/index.js",
+    "affisto": "node packages/cli/dist/index.js",
+    "postinstall": "echo 'Tip: use \"pnpm -w af\" or add alias af=\"pnpm -w af\" to your shell'"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
