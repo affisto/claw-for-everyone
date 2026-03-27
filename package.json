@@ -1,0 +1,26 @@
+{
+  "name": "claw-for-everyone",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Worker Platform - Assign 24/7 AI agents, invite them to Slack/Telegram/Discord, teach them skills",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.23.0",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "clean": "turbo clean"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "turbo": "^2.8.20"
+  }
+}

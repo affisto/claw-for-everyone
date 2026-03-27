@@ -1,0 +1,25 @@
+{
+  "name": "@claw/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "affisto": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@claw/channels": "workspace:*",
+    "@claw/runtime": "workspace:*",
+    "@claw/shared-db": "workspace:*",
+    "@claw/skills": "workspace:*",
+    "commander": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.7.0"
+  }
+}
