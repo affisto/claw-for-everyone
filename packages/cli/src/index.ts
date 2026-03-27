@@ -345,11 +345,16 @@ program
 // --- invite ---
 program
   .command("invite <name>")
-  .description("Invite an agent to a Slack channel")
+  .description("Invite an agent to a channel (Slack or Telegram)")
   .option("--slack <channel>", "Slack channel name or ID")
   .option("--slack-bot-token <token>", "Slack Bot Token (or SLACK_BOT_TOKEN env)")
   .option("--slack-app-token <token>", "Slack App Token (or SLACK_APP_TOKEN env)")
-  .action(async (name: string, opts: { slack?: string; slackBotToken?: string; slackAppToken?: string }) => {
+  .option("--telegram", "Connect to Telegram")
+  .option("--telegram-bot-token <token>", "Telegram Bot Token (or TELEGRAM_BOT_TOKEN env)")
+  .action(async (name: string, opts: {
+    slack?: string; slackBotToken?: string; slackAppToken?: string;
+    telegram?: boolean; telegramBotToken?: string;
+  }) => {
     const db = initDb();
     const agent = db.select().from(agents).where(eq(agents.name, name)).get();
     if (!agent) {
@@ -357,35 +362,57 @@ program
       process.exit(1);
     }
 
-    if (!opts.slack) {
-      console.error("Please specify a channel: --slack <channel>");
-      process.exit(1);
+    if (opts.telegram) {
+      const botToken = opts.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || "";
+      if (!botToken) {
+        console.error("Telegram requires a bot token.");
+        console.error("  Set TELEGRAM_BOT_TOKEN env var, or pass --telegram-bot-token.");
+        process.exit(1);
+      }
+
+      const id = randomUUID();
+      db.insert(channelConfigs).values({
+        id,
+        agentId: agent.id,
+        channelType: "telegram",
+        config: JSON.stringify({ botToken }),
+        active: 1,
+        createdAt: new Date(),
+      }).run();
+
+      console.log(`Agent "${name}" connected to Telegram.`);
+      console.log(`  Start the bridge with: pnpm -w af bridge`);
+      return;
     }
 
-    const botToken = opts.slackBotToken || process.env.SLACK_BOT_TOKEN || "";
-    const appToken = opts.slackAppToken || process.env.SLACK_APP_TOKEN || "";
+    if (opts.slack) {
+      const botToken = opts.slackBotToken || process.env.SLACK_BOT_TOKEN || "";
+      const appToken = opts.slackAppToken || process.env.SLACK_APP_TOKEN || "";
 
-    if (!botToken || !appToken) {
-      console.error("Slack requires bot token and app token.");
-      console.error("  Set SLACK_BOT_TOKEN and SLACK_APP_TOKEN env vars,");
-      console.error("  or pass --slack-bot-token and --slack-app-token.");
-      process.exit(1);
+      if (!botToken || !appToken) {
+        console.error("Slack requires bot token and app token.");
+        console.error("  Set SLACK_BOT_TOKEN and SLACK_APP_TOKEN env vars,");
+        console.error("  or pass --slack-bot-token and --slack-app-token.");
+        process.exit(1);
+      }
+
+      const id = randomUUID();
+      db.insert(channelConfigs).values({
+        id,
+        agentId: agent.id,
+        channelType: "slack",
+        config: JSON.stringify({ botToken, appToken, channel: opts.slack }),
+        active: 1,
+        createdAt: new Date(),
+      }).run();
+
+      console.log(`Agent "${name}" invited to Slack channel "${opts.slack}".`);
+      console.log(`  Start the bridge with: pnpm -w af bridge`);
+      return;
     }
 
-    const id = randomUUID();
-    const config = JSON.stringify({ botToken, appToken, channel: opts.slack });
-
-    db.insert(channelConfigs).values({
-      id,
-      agentId: agent.id,
-      channelType: "slack",
-      config,
-      active: 1,
-      createdAt: new Date(),
-    }).run();
-
-    console.log(`Agent "${name}" invited to Slack channel "${opts.slack}".`);
-    console.log(`  Start the bridge with: pnpm -w af bridge`);
+    console.error("Please specify a channel: --slack <channel> or --telegram");
+    process.exit(1);
   });
 
 // --- bridge ---
@@ -407,7 +434,7 @@ program
       const agent = db.select().from(agents).where(eq(agents.id, cfg.agentId)).get();
       if (!agent) continue;
 
-      const parsed = JSON.parse(cfg.config) as { botToken: string; appToken: string; channel: string };
+      const parsed = JSON.parse(cfg.config) as Record<string, string>;
 
       // Find agent port from container
       let agentPort = 4100;
@@ -430,6 +457,11 @@ program
         await bridge.connectSlack(agent.name, agentPort, {
           botToken: parsed.botToken,
           appToken: parsed.appToken,
+        });
+      } else if (cfg.channelType === "telegram") {
+        console.log(`Connecting agent "${agent.name}" to Telegram...`);
+        await bridge.connectTelegram(agent.name, agentPort, {
+          botToken: parsed.botToken,
         });
       }
     }

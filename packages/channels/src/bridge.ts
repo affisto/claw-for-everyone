@@ -1,4 +1,5 @@
 import { SlackChannel } from "./slack.js";
+import { TelegramChannel } from "./telegram.js";
 import type { Channel, ChannelMessage } from "./types.js";
 
 interface AgentBinding {
@@ -25,6 +26,23 @@ export class ChannelBridge {
 
     this.bindings.push({ agentName, agentPort, channel: slack });
     console.log(`[Bridge] Agent "${agentName}" connected to Slack (port ${agentPort})`);
+  }
+
+  async connectTelegram(
+    agentName: string,
+    agentPort: number,
+    config: { botToken: string },
+  ): Promise<void> {
+    const telegram = new TelegramChannel();
+
+    telegram.onMessage(async (msg: ChannelMessage) => {
+      return this.forwardToAgent(agentName, agentPort, msg.text);
+    });
+
+    await telegram.connect(config);
+
+    this.bindings.push({ agentName, agentPort, channel: telegram });
+    console.log(`[Bridge] Agent "${agentName}" connected to Telegram (port ${agentPort})`);
   }
 
   private async forwardToAgent(
