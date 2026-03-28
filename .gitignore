@@ -8,3 +8,4 @@ dist/
 *.sqlite
 .DS_Store
 .omc/
+openai.txt

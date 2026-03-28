@@ -25,6 +25,7 @@ export default function Dashboard() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [newName, setNewName] = useState("");
   const [newLlm, setNewLlm] = useState("claude");
+  const [newApiKey, setNewApiKey] = useState("");
   const [loading, setLoading] = useState(false);
 
   const fetchAgents = useCallback(async () => {
@@ -45,9 +46,10 @@ export default function Dashboard() {
     await fetch("/api/agents", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName, llm: newLlm }),
+      body: JSON.stringify({ name: newName, llm: newLlm, apiKey: newApiKey }),
     });
     setNewName("");
+    setNewApiKey("");
     await fetchAgents();
     setLoading(false);
   };
@@ -119,6 +121,16 @@ export default function Dashboard() {
             </option>
           ))}
         </select>
+        <input
+          type="password"
+          placeholder="API Key"
+          value={newApiKey}
+          onChange={(e) => setNewApiKey(e.target.value)}
+          style={{
+            width: 160, padding: "0.5rem 0.75rem", borderRadius: "6px",
+            border: "1px solid #d1d5db", fontSize: "0.875rem",
+          }}
+        />
         <button
           onClick={createAgent}
           disabled={loading || !newName.trim()}
