@@ -11,6 +11,7 @@ const AGENT_NAME = process.env.AGENT_NAME || "unnamed";
 const LLM_PROVIDER = process.env.LLM_PROVIDER || "claude";
 const LLM_MODEL = process.env.LLM_MODEL || "";
 const LLM_API_KEY = process.env.LLM_API_KEY || "";
+const LLM_OAUTH_TOKEN = process.env.LLM_OAUTH_TOKEN || "";
 const LLM_BASE_URL = process.env.LLM_BASE_URL || "";
 const KNOWLEDGE_DIR = process.env.AGENT_KNOWLEDGE_DIR
   || join(process.env.AGENT_DATA_DIR || join(__dirname, "data"), "knowledge");
@@ -87,6 +88,19 @@ function getBaseUrl() {
   return "";
 }
 
+function getClaudeHeaders() {
+  const headers = {
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+  };
+  if (LLM_OAUTH_TOKEN) {
+    headers["Authorization"] = `Bearer ${LLM_OAUTH_TOKEN}`;
+  } else if (LLM_API_KEY) {
+    headers["x-api-key"] = LLM_API_KEY;
+  }
+  return headers;
+}
+
 function extractTextContent(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -144,11 +158,7 @@ async function chatClaude(messages) {
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": LLM_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
+    headers: getClaudeHeaders(),
     body: JSON.stringify(body),
   });
 

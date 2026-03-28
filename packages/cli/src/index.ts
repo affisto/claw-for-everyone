@@ -126,7 +126,8 @@ program
     "--api-key <key>",
     "LLM API key (or set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / GOOGLE_API_KEY / LMSTUDIO_API_KEY)",
   )
-  .action(async (name: string, opts: { llm: string; model?: string; apiKey?: string }) => {
+  .option("--oauth-token <token>", "Claude OAuth token for Max subscribers (or set ANTHROPIC_OAUTH_TOKEN)")
+  .action(async (name: string, opts: { llm: string; model?: string; apiKey?: string; oauthToken?: string }) => {
     const db = initDb();
 
     if (!isSupportedLLMProvider(opts.llm)) {
@@ -145,6 +146,7 @@ program
     const id = randomUUID();
     const provider = opts.llm;
     const apiKey = getProviderApiKey(provider, opts.apiKey);
+    const oauthToken = opts.oauthToken || process.env.ANTHROPIC_OAUTH_TOKEN || "";
     const model = opts.model || getDefaultModel(provider);
     const baseUrl = getProviderBaseUrl(provider);
 
@@ -181,6 +183,7 @@ program
         `-e LLM_PROVIDER=${provider} ` +
         `-e LLM_MODEL=${model || ""} ` +
         `-e LLM_API_KEY=${apiKey} ` +
+        `-e LLM_OAUTH_TOKEN=${oauthToken} ` +
         `-e LLM_BASE_URL=${baseUrl} ` +
         `-e HOST_URL=http://host.docker.internal:3000 ` +
         `-e BRAVE_SEARCH_API_KEY=${process.env.BRAVE_SEARCH_API_KEY || ""} ` +
